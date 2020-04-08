@@ -156,7 +156,14 @@ int main(int argc, char* argv[]){
 	    printf("%.4f, ", alldata[i]); 
 	}
 	printf("\n");
+    if(write_output(output_name, alldata, num_values) != 0) {
+		return 2;
+	}
     }
+
+    free(localin); 
+    free(localout); 
+    free(alldata); 
     MPI_Finalize(); 
    
 }
