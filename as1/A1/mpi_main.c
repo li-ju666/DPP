@@ -16,7 +16,7 @@ int main(int argc, char* argv[]){
     /* MPI initialization */
     MPI_Status status; 
     int rank, size, left, right, num_values; 
-    double* localin, *localout, *input; 
+    double* localin, *localout, *alldata; 
     
     MPI_Init(NULL, NULL); 
     
@@ -26,24 +26,27 @@ int main(int argc, char* argv[]){
     left = (rank-1+size)%size; 
     right = (rank+1+size)%size; 
 
-
-    /* Stencil values */
-    double h = 2.0*PI/num_values; 
-    const int STENCIL_WIDTH = 5; 
-    const int EXTENT = STENCIL_WIDTH/2; 
-    const double STENCIL[] = {1.0/(12*h), -8.0/(12*h), 0.0, 8.0/(12*h), -1.0/(12*h)}; 
     double leftbuff[2], rightbuff[2]; 
     MPI_Request lsendr, rsendr, lrecvr, rrecvr; 
+
     /* Read input file from Process 0*/
     if(rank == 0){
 	/* double* input; */ 
-	num_values = read_input(input_name, &input); 
+	num_values = read_input(input_name, &alldata); 
 	if(num_values < 0){return 2; }
     }
 
     /* Broadcast the number of values: to make other processes allocate memory */
     MPI_Bcast(&num_values, 1, MPI_INT, 0, MPI_COMM_WORLD); 
-    printf("From process %d: My left is %d, my right is %d. \n", rank, left, right); 
+
+    /* printf("From process %d: My left is %d, my right is %d. \n", rank, left, right); */ 
+
+    double h = 2.0*PI/num_values;
+    const int STENCIL_WIDTH = 5;
+    const int EXTENT = STENCIL_WIDTH/2;
+    const double STENCIL[] = {1.0/(12*h), -8.0/(12*h), 0.0, 8.0/(12*h), -1.0/(12*h)};
+    printf("From process %d -- Stencil are: %.3f, %.3f, %.3f, %.3f, %.3f. \n\n", 
+		rank, STENCIL[0], STENCIL[1], STENCIL[2], STENCIL[3], STENCIL[4]); 
 
     /* Allocate memory for local data */
     localin = (double*)malloc(num_values/size * sizeof(double)); 
@@ -55,10 +58,10 @@ int main(int argc, char* argv[]){
     /* Assign data (by p0) */
     if(rank == 0){
 	/* Copy p0's own data */
-	memcpy(localin, input, num_values/size*sizeof(double)); 
+	memcpy(localin, alldata, num_values/size*sizeof(double)); 
 	/* Send data to other proceseses */
 	for(int i=1; i<size; i++){
-	    MPI_Ssend(&input[i*num_values/size], 
+	    MPI_Ssend(&alldata[i*num_values/size], 
 		num_values/size, MPI_DOUBLE, i, 111*i, MPI_COMM_WORLD); 
 	}
     }
@@ -79,9 +82,9 @@ int main(int argc, char* argv[]){
 	MPI_Wait(&lrecvr, &status); 
 	MPI_Wait(&rrecvr, &status);
 
-	printf("From process %d: localin: %.3f, %.3f, %.3f, %.3f. \nLeft buff: %.3f, %.3f. \nRight buff: %.3f, %.3f. \n", 
-		rank, localin[0], localin[1], localin[2], localin[3], 
-		leftbuff[0], leftbuff[1], rightbuff[0], rightbuff[1]); 
+	/* printf("From process %d: localin: %.3f, %.3f, %.3f, %.3f. \nLeft buff: %.3f, %.3f. \nRight buff: %.3f, %.3f. \n\n", */ 
+	/* 	rank, localin[0], localin[1], localin[2], localin[3], */ 
+	/* 	leftbuff[0], leftbuff[1], rightbuff[0], rightbuff[1]); */ 
 
 	/* Apply stencil on local data */
 	for(int i=0; i<EXTENT; i++){
@@ -113,25 +116,49 @@ int main(int argc, char* argv[]){
 	    }
 	    localout[i] = result; 
 	}
-	printf("From process %d: localout: %.3f, %.3f, %.3f, %.3f. \n", 
-		rank, localout[0], localout[1], localout[2], localout[3]); 
+	/* printf("From process %d: localout: %.3f, %.3f, %.3f, %.3f. \n", */ 
+	/* 	rank, localout[0], localout[1], localout[2], localout[3]); */ 
+	MPI_Barrier(MPI_COMM_WORLD);
+
 	/* Swap input and output */
 	if(step < num_steps-1){
 	   double* temp = localin; 
 	   localin = localout; 
 	   localout = temp; 
 	}
-	MPI_Barrier(MPI_COMM_WORLD);
+	else{
+	    printf("From process %d: result: %.3f, %.3f, %.3f, %.3f. \n", 
+		rank, localout[0], localout[1], localout[2], localout[3]); 
+	    
+	    if(rank == 0){
+		memcpy(alldata, localout, num_values/size*sizeof(double)); 
+		for(int i=1; i<size; i++){
+		    MPI_Recv(&alldata[i*num_values/size], num_values/size, 
+			    MPI_DOUBLE, i, 111*i, MPI_COMM_WORLD, &status);
+		   printf("Received data from %d: %.3f, %.3f, %.3f, %.3f. \n", 
+			   alldata[i*num_values/size], alldata[i*num_values/size+1],alldata[i*num_values/size+2],alldata[i*num_values/size+3],i);  
+		}
+	    }
+	    else{
+		MPI_Ssend(localout, num_values/size, MPI_DOUBLE, 0, 111*rank, MPI_COMM_WORLD); 
+	    }
+	}
+	/* MPI_Barrier(MPI_COMM_WORLD); */
     }
     /* printf("From process %d: left buff: %.2f, %.2f. right buff: %.2f, %.2f. \n", */ 
 	    /* rank, leftbuff[0], leftbuff[1], rightbuff[0], rightbuff[1]); */ 
 
     /* printf("From process %d: my data are %lf and %lf. \n", rank, localin[0], localin[1]); */ 
-
-
+    /* MPI_Finalize(); */ 
+    if(rank == 0){
+	printf("Final data: \n"); 
+	for(int i=0; i<num_values; i++){
+	    printf("%.4f, ", alldata[i]); 
+	}
+	printf("\n");
+    }
     MPI_Finalize(); 
-
-    
+   
 }
 
 

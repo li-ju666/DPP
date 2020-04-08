@@ -22,6 +22,9 @@ int main(int argc, char **argv) {
 	const int STENCIL_WIDTH = 5;
 	const int EXTENT = STENCIL_WIDTH/2;
 	const double STENCIL[] = {1.0/(12*h), -8.0/(12*h), 0.0, 8.0/(12*h), -1.0/(12*h)};
+	for(int i=0; i<5; i++){
+	    printf("Stencil are: %.3f. \n", STENCIL[i]);
+	}
 
 	// Start timer
 	double start = MPI_Wtime();
