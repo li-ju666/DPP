@@ -73,14 +73,11 @@ int main(int argc, char* argv[]){
     }
 
 #if TIMEANALYSIS
-    double start, my_execution_time; 
+    double start = MPI_Wtime(); 
     double* exe_time;  
 #endif
 
     for(int step=0; step<num_steps; step++){
-#if TIMEANALYSIS
-	start = MPI_Wtime(); 
-#endif
 	/* Communicate with neighbors for data */
 	MPI_Isend(localin, EXTENT, MPI_DOUBLE, left, LEFTTAG*(rank+1), MPI_COMM_WORLD, &lsendr); 
 	MPI_Isend(&localin[num_values/size-2], EXTENT, MPI_DOUBLE, right, RIGHTTAG*(rank+1), MPI_COMM_WORLD, &rsendr); 
@@ -91,9 +88,7 @@ int main(int argc, char* argv[]){
 	MPI_Wait(&rsendr, &status); 
 	MPI_Wait(&lrecvr, &status); 
 	MPI_Wait(&rrecvr, &status);
-/* #if TIMEANALYSIS */
-/* 	start = MPI_Wtime(); */ 
-/* #endif */
+	
 	/* Apply stencil on local data */
 	double result = 0; 
 	for(int i=0; i<EXTENT; i++){
@@ -125,16 +120,8 @@ int main(int argc, char* argv[]){
 	    }
 	    localout[i] = result; 
 	}
-#if TIMEANALYSIS
-	/* Time evaluation part */
-	my_execution_time += MPI_Wtime() - start; 
-#endif
 	/* Only if all processes finished the partial work, they go to next round. */ 
 	MPI_Barrier(MPI_COMM_WORLD);
-/* #if TIMEANALYSIS */
-/* 	/1* Time evaluation part *1/ */
-/* 	my_execution_time += MPI_Wtime() - start; */ 
-/* #endif */
 
 	/* Swap input and output */
 	if(step < num_steps-1){
@@ -143,6 +130,11 @@ int main(int argc, char* argv[]){
 	   localout = temp; 
 	}
 	else{
+
+#if TIMEANALYSIS
+	   /* Time evaluation part */
+	    double my_execution_time = MPI_Wtime() - start; 
+#endif
 	    /* Collect data from other processes */
 	    if(rank == 0){
 

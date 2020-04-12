@@ -1,9 +1,16 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <mpi.h>
 
 int main(int argc, char* argv[]){
-    int a = 0; 
-    int left = ((a-1)%2); 
-    int right = (a+1)%2; 
-    printf("Me myself is: %d, left is %d, right is %d. \n", a, left, right); 
+    
+    MPI_Init(NULL, NULL);
+    int size, rank; 
+    
+    MPI_Comm_size(MPI_COMM_WORLD, &size); 
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank); 
+    
+    printf("Me myself is: %d of %d. \n", rank, size);
+    
+    MPI_Finalize();  
 }
