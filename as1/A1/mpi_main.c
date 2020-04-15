@@ -78,7 +78,9 @@ int main(int argc, char* argv[]){
 #endif
 
     for(int step=0; step<num_steps; step++){
-#if TIMEANALYSIS
+
+#if 0
+	/* communication time included */
 	start = MPI_Wtime(); 
 #endif
 	/* Communicate with neighbors for data */
@@ -91,9 +93,11 @@ int main(int argc, char* argv[]){
 	MPI_Wait(&rsendr, &status); 
 	MPI_Wait(&lrecvr, &status); 
 	MPI_Wait(&rrecvr, &status);
-/* #if TIMEANALYSIS */
-/* 	start = MPI_Wtime(); */ 
-/* #endif */
+
+#if TIMEANALYSIS
+	/* Communication time not included */
+	start = MPI_Wtime(); 
+#endif
 	/* Apply stencil on local data */
 	double result = 0; 
 	for(int i=0; i<EXTENT; i++){
