@@ -3,6 +3,7 @@
 #include <mpi.h>
 #define WRITE 1
 #define TEST 0
+#define ASSIGN_TAG 1349
 
 #if WRITE
 int main(int argc, char** argv){
@@ -11,18 +12,23 @@ int main(int argc, char** argv){
 	return -1; 
     }
     /* MPI initialization */
-    MPI_Status status; 
     int rank, size; 
     MPI_Comm GRID_COMM; 
+    MPI_Datatype checkboard_type;
+
     int grid_dim[2], grid_period[2], my_coord[2], 
 	left_coord[2], right_coord[2], 
 	up_coord[2], down_coord[2], 
 	left, right, up, down; 
-       
+    
+    /* MPI initialization */
     MPI_Init(&argc, &argv); 
     MPI_Comm_size(MPI_COMM_WORLD, &size); 
     MPI_Comm_rank(MPI_COMM_WORLD, &rank); 
     
+    MPI_Request Srequest[size]; 
+    MPI_Status status[size]; 
+
     grid_dim[0] = grid_dim[1] = (int)sqrt(size); 
     grid_period[0] = grid_period[1] = 1; 
 
@@ -48,10 +54,11 @@ int main(int argc, char** argv){
     MPI_Cart_rank(GRID_COMM, left_coord, &left); 
     MPI_Cart_rank(GRID_COMM, right_coord, &right); 
     MPI_Cart_rank(GRID_COMM, up_coord, &up); 
-    MPI_Cart_rank(GRID_COMM, down_coord, &down); 
+    MPI_Cart_rank(GRID_COMM, down_coord, &down);
+
     printf("From process %d: left: %d, right: %d, up: %d, down: %d. \n", 
 	    rank, left, right, up, down); 
-    
+
     /* Local variable declaration */
     int dim; 
     float *A_all, *B_all, *C_all, *A_local, *B_local, *A_cal, *B_cal, *C; 
@@ -67,6 +74,12 @@ int main(int argc, char** argv){
     
     MPI_Bcast(&dim, 1, MPI_INT, 0, GRID_COMM); 
     printf("From process %d: local data dim is: %d. \n", rank, dim);   
+    
+    /* Define checkboard data type (for task assigning) */
+    MPI_Type_vector(dim*dim, 1, size, MPI_FLOAT, &checkboard_type); 
+    MPI_Type_commit(&checkboard_type); 
+    
+    /* Allocate memory for local storage data and calculation-required data */
     A_local = malloc(dim*dim*sizeof(float)); 
     B_local = malloc(dim*dim*sizeof(float)); 
 
@@ -83,10 +96,18 @@ int main(int argc, char** argv){
 	printf("From rank %d: memory allocation for local calculation matrix failed! \n", rank); 
 	return -1; 
     }
-
-//    if(rank == 0){
-		
-//    }
+    
+    if(rank == 0){
+	for(int i=0; i<size; i++){
+	    MPI_Isend(&(A_all[i]), 1, checkboard_type, i, ASSIGN_TAG+i, GRID_COMM, &Srequest[i]); 
+	}
+    }
+    MPI_Recv(A_local, 1, checkboard_type, 0, ASSIGN_TAG+rank, GRID_COMM, &status[0]); 
+    if(rank == 0){
+	MPI_Waitall(size, Srequest, status); 
+    }
+    printf("From process %d: \n", rank);  
+    vis(A_local, dim); 
 
     MPI_Finalize(); 
 }
