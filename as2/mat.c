@@ -13,6 +13,13 @@ float* multiply(float* A, float* B, int dim){
     return result; 
 }
 
+void sum(float* A, float* B, int dim){
+    for(int i=0; i<dim*dim; i++){
+	A[i] += B[i]; 
+    }
+    free(B); 
+}
+
 /* Function to print matrix */
 void vis(float* A, int dim){
     for(int i=0; i<dim; i++){
@@ -21,6 +28,7 @@ void vis(float* A, int dim){
 	}
 	printf("\n"); 
     }
+    printf("-------------------------------------------------\n"); 
 }
 
 /* Function to read data from input file */
@@ -36,7 +44,6 @@ int read_input(const char* file_name, float** A, float** B){
         perror("Couldn't read dimension of matrices from input file");
         return -1;
     }
-    printf("Now the dimension is: %d. \n", N); 
 
     if (NULL == (*A = malloc(N*N * sizeof(float)))) {
         perror("Couldn't allocate memory for Matrix A");
@@ -47,9 +54,7 @@ int read_input(const char* file_name, float** A, float** B){
 	    perror("Couldn't read elements for matrix A from input file");
 	    return -1;
 	    }
-	printf("Now data is: %f. \n", (*A)[i]); 
     }
-    printf("Matrix A read! \n"); 
 
     if (NULL == (*B = malloc(N*N * sizeof(float)))) {
         perror("Couldn't allocate memory for Matrix B");
