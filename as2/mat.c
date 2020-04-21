@@ -28,7 +28,7 @@ void vis(float* A, int dim){
 	}
 	printf("\n"); 
     }
-    printf("-------------------------------------------------\n"); 
+//    printf("-------------------------------------------------\n"); 
 }
 
 /* Function to read data from input file */
