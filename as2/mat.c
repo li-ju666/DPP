@@ -17,7 +17,6 @@ void sum(float* A, float* B, int dim){
     for(int i=0; i<dim*dim; i++){
 	A[i] += B[i]; 
     }
-    free(B); 
 }
 
 /* Function to print matrix */
