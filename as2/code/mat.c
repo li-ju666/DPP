@@ -6,7 +6,7 @@ float* multiply(float* A, float* B, int dim){
     for(int i=0; i<dim; i++){
 	for(int j=0; j<dim; j++){
 	    for(int index=0; index<dim; index++){
-		result[j*dim+i] += A[index*dim+i]*B[j*dim+index]; 
+		result[i*dim+j] += A[i*dim+index]*B[index*dim+j]; 
 	    }
 	}
     }
@@ -23,7 +23,7 @@ void sum(float* A, float* B, int dim){
 void vis(float* A, int dim){
     for(int i=0; i<dim; i++){
 	for(int j=0; j<dim; j++){
-	    printf("%.2f ", A[j*dim+i]); 
+	    printf("%.2f ", A[i*dim+j]); 
 	}
 	printf("\n"); 
     }
@@ -84,6 +84,9 @@ int write_output(char* file_name, const float* output, int dim){
 	if(0>fprintf(file, "%.6f ", output[i])){
 	    perror("Couldn't write to output file");
 	    return -1; 
+	}
+	if((i+1)%dim == 0 && i+1 < num_values){
+	    fprintf(file, "\n"); 
 	}
     }
 

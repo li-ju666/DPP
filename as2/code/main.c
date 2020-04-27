@@ -2,15 +2,19 @@
 #include <math.h>
 #include <mpi.h>
 #include <string.h>
+
 #define A_TAG 1349
 #define B_TAG 204
+
+#define VIS 1
+#define SAVE 1
 
 int main(int argc, char** argv){
     if(argc != 3){
 	printf("Error: invalid parameters. Input file name and output file name required. \n"); 
 	return -1; 
     }
-    /* MPI initialization */
+    /* MPI data declaration */
     int rank, size; 
     MPI_Comm GRID_COMM; 
     MPI_Datatype checkboard_type;
@@ -18,7 +22,9 @@ int main(int argc, char** argv){
     int grid_dim[2], grid_period[2], my_coord[2] = {0,0}, 
 	up_coord[2], down_coord[2], 
 	left, right, up, down; 
+    char* input_file = argv[1]; 
     char* output_file = argv[2];
+
     /* MPI initialization */
     MPI_Init(&argc, &argv); 
     MPI_Comm_size(MPI_COMM_WORLD, &size); 
@@ -27,7 +33,7 @@ int main(int argc, char** argv){
     MPI_Request Arequest[size], Brequest[size]; 
     MPI_Status status[size]; 
 
-    grid_dim[0] = grid_dim[1] = (int)sqrt(size); 
+    grid_dim[0] = grid_dim[1] = (int)sqrt((double)size); 
     grid_period[0] = grid_period[1] = 1; 
     
     /* if(rank == 0){printf("The grid dim are %d, %d. \n", grid_dim[0], grid_dim[1]); } */
@@ -113,9 +119,9 @@ int main(int argc, char** argv){
     if(rank == 0){
 	for(int i=0; i<size; i++){
 	    /* printf("Index is: %d. \n", i%grid_dim[0]*dim*grid_dim[0] + i/grid_dim[0]); */ 
-	    MPI_Isend(&(A_all[(i%grid_dim[0])*dim*grid_dim[0] + i/grid_dim[0]]),  
+	    MPI_Isend(&(A_all[(i%grid_dim[0]) + i/grid_dim[0]*dim*grid_dim[0]]),  
 		    dim, checkboard_type, i, A_TAG+i, GRID_COMM, &Arequest[i]); 
-	    MPI_Isend(&(B_all[(i%grid_dim[0])*dim*grid_dim[0] + i/grid_dim[1]]),  
+	    MPI_Isend(&(B_all[(i%grid_dim[0]) + i/grid_dim[0]*dim*grid_dim[0]]),  
 		    dim, checkboard_type, i, B_TAG+i, GRID_COMM, &Brequest[i]); 
 	}
     }
@@ -125,7 +131,9 @@ int main(int argc, char** argv){
 	MPI_Waitall(size, Arequest, status); 
 	MPI_Waitall(size, Brequest, status); 
     }
-    
+    /* if(rank == 0){ */
+	/* vis(A_local, dim); */ 
+    /* } */ 
     /* Define Row communicator */
     MPI_Comm ROW_COMM;  
     MPI_Comm_split(GRID_COMM, my_coord[0], rank, &ROW_COMM); 
@@ -139,15 +147,11 @@ int main(int argc, char** argv){
 	MPI_Bcast(A_cal, dim*dim, MPI_FLOAT, 
 		(my_coord[0]+i)%grid_dim[0], ROW_COMM);
 	/* Local matrix calculation */
+	/* printf("Process %d: round %d: My A is %.3f, my B is %.3f. \n", rank, i, A_cal[0], B_cal[0]); */ 
 	float* temp = multiply(A_cal, B_cal, dim); 
 	sum(C, temp, dim);
 	free(temp);
-	/* vis(A_local, dim); */ 
-	/* printf("===========================\n"); */ 	
-	/* vis(A_cal, dim); */ 
-	/* printf("====================\n"); */
-	/* vis(B_cal, dim); */ 
-	/* Partial matrix B scrolling up */
+
 	MPI_Isend(B_cal, dim*dim, MPI_FLOAT, up, B_TAG+rank, GRID_COMM, &Brequest[0]); 
 	MPI_Recv(B_cal, dim*dim, MPI_FLOAT, down, B_TAG+down, GRID_COMM, &status[0]); 
 	MPI_Wait(&Brequest[0], &status[0]);
@@ -157,9 +161,10 @@ int main(int argc, char** argv){
     MPI_Isend(C, dim*dim, MPI_FLOAT, 0, B_TAG+rank, GRID_COMM, &Brequest[0]); 
     if(rank == 0){
 	for(int i=0; i<size; i++){
-	    MPI_Recv(&(C_all[(i%grid_dim[0])*dim*grid_dim[0] + i/grid_dim[0]]), 
+	    MPI_Recv(&(C_all[(i%grid_dim[0]) + i/grid_dim[0]*dim*grid_dim[0]]), 
 		    dim, checkboard_type, i, B_TAG+i, GRID_COMM, &status[0]); 
 	}
+#if VIS
 	/* Print result out */
 	printf("Matrix A: \n"); 
 	vis(A_all, dim*grid_dim[0]); 
@@ -167,9 +172,12 @@ int main(int argc, char** argv){
 	vis(B_all, dim*grid_dim[0]); 
 	printf("A * B: \n"); 
 	vis(C_all, dim*grid_dim[0]);
+#endif
+#if SAVE
 	if(write_output(output_file, C_all, dim*grid_dim[0]) != 0){
 	    printf("Write output matrix failed! \n"); 
 	}
+#endif
 	free(C_all); 
 	free(A_all); 
 	free(B_all); 
