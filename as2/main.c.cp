@@ -73,31 +73,9 @@ int main(int argc, char** argv){
     /* printf("From process %d: local data dim is: %d. \n", rank, dim); */   
     
     /* Define checkboard data type (for task assigning) */
-    /* MPI_Type_vector(dim, dim,dim*grid_dim[0], MPI_FLOAT, &checkboard_type); */ 
-    /* MPI_Type_commit(&checkboard_type); */ 
-    
-    /* Another approach - cyclic checkboard split */
-    int block_len[dim]; 
-    MPI_Aint indices[dim]; 
-    MPI_Datatype data_type[dim];
-     
-    for(int i=0; i<dim; i++){
-	block_len[i] = 1; 
-	indices[i] = i*grid_dim[0]*sizeof(float);
-	data_type[i] = MPI_FLOAT; 
-    }
-    /* indices[dim-1] = grid_dim[0]*dim*grid_dim[0]*sizeof(float); */ 
-    /* if(rank == 0){ */
-	/* printf("Dim is %d. \n===========================\n", dim); */ 
-	/* for(int i=0; i<dim; i++){ */
-	    /* printf("Index is %d. \n", indices[i]); */ 
-	/* } */
-    /* } */
-    MPI_Type_create_struct(dim, block_len, indices, data_type, &checkboard_type); 
-    MPI_Type_create_resized(checkboard_type, 0, grid_dim[0]*grid_dim[0]*dim*sizeof(float), &checkboard_type);
+    MPI_Type_vector(dim, dim,dim*grid_dim[0], MPI_FLOAT, &checkboard_type); 
     MPI_Type_commit(&checkboard_type); 
     
-
     /* Allocate memory for local stored partial-A and calculation-required partial A and B */
     A_local = malloc(dim*dim*sizeof(float)); 
     A_cal = malloc(dim*dim*sizeof(float)); 
@@ -112,11 +90,11 @@ int main(int argc, char** argv){
     /* Assign matrix A and B to all processes */ 
     if(rank == 0){
 	for(int i=0; i<size; i++){
-	    /* printf("Index is: %d. \n", i%grid_dim[0]*dim*grid_dim[0] + i/grid_dim[0]); */ 
-	    MPI_Isend(&(A_all[(i%grid_dim[0])*dim*grid_dim[0] + i/grid_dim[0]]),  
-		    dim, checkboard_type, i, A_TAG+i, GRID_COMM, &Arequest[i]); 
-	    MPI_Isend(&(B_all[(i%grid_dim[0])*dim*grid_dim[0] + i/grid_dim[1]]),  
-		    dim, checkboard_type, i, B_TAG+i, GRID_COMM, &Brequest[i]); 
+	    /* printf("Index is: %d. \n", i%grid_dim[0]*dim*dim*grid_dim[0] + i/grid_dim[0]*dim); */ 
+	    MPI_Isend(&(A_all[i%grid_dim[0]*dim*dim*grid_dim[0] + i/grid_dim[0]*dim]), 
+		    1, checkboard_type, i, A_TAG+i, GRID_COMM, &Arequest[i]); 
+	    MPI_Isend(&(B_all[i%grid_dim[0]*dim*dim*grid_dim[0] + i/grid_dim[0]*dim]), 
+		    1, checkboard_type, i, B_TAG+i, GRID_COMM, &Brequest[i]); 
 	}
     }
     MPI_Recv(A_local, dim*dim, MPI_FLOAT, 0, A_TAG+rank, GRID_COMM, &status[0]); 
@@ -153,12 +131,13 @@ int main(int argc, char** argv){
 	MPI_Wait(&Brequest[0], &status[0]);
 	MPI_Barrier(GRID_COMM); 	
     }
+    
     /* Collect result from all processes to process with rank 0 */ 
     MPI_Isend(C, dim*dim, MPI_FLOAT, 0, B_TAG+rank, GRID_COMM, &Brequest[0]); 
     if(rank == 0){
 	for(int i=0; i<size; i++){
-	    MPI_Recv(&(C_all[(i%grid_dim[0])*dim*grid_dim[0] + i/grid_dim[0]]), 
-		    dim, checkboard_type, i, B_TAG+i, GRID_COMM, &status[0]); 
+	    MPI_Recv(&C_all[i%grid_dim[0]*dim*dim*grid_dim[0] + i/grid_dim[0]*dim], 
+		    1, checkboard_type, i, B_TAG+i, GRID_COMM, &status[0]); 
 	}
 	/* Print result out */
 	printf("Matrix A: \n"); 
