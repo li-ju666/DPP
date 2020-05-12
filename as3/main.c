@@ -6,6 +6,7 @@
 #define ASSIGN_TAG 1111
 #define SEND_TAG 1349
 #define ARRAY_SEND_TAG 666
+
 int cmpfunc(const void*, const void*); 
 void vis(const int*, int); 
 int cal_dim(int); 
@@ -84,15 +85,15 @@ int main(int argc, char** argv){
 
     qsort(array_local, num_all/size, sizeof(int), cmpfunc); 
 
-    for(int i=0; i<size; i++){
-	if(rank == i){
-	    printf("From rank %d: ", rank); 
-	    vis(array_local, num_all/size); 
-	    printf("\n"); 
-	}
-	MPI_Barrier(MPI_COMM_WORLD); 
+    /* for(int i=0; i<size; i++){ */
+	/* if(rank == i){ */
+	    /* printf("From rank %d: ", rank); */ 
+	    /* vis(array_local, num_all/size); */ 
+	    /* printf("\n"); */ 
+	/* } */
+	/* MPI_Barrier(MPI_COMM_WORLD); */ 
 
-    }
+    /* } */
     int pivot, length = num_all/size, sum; 
     MPI_Comm SUB_COMM = CUBE_COMM; 
     int sub_rank = rank, sub_size = size; 
