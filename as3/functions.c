@@ -53,6 +53,16 @@ int cmpfunc(const void* a, const void* b){
     return (*(int*)a - *(int*)b); 
 }
 
+int get_rank(const int* orders, int num, int order){
+    for(int i=0; i<num; i++){
+	if(orders[i] == order){
+	    return i; 
+	}
+    }
+    printf("Error: Cannot find the order! \n"); 
+    return -1; 
+}
+
 /* int main(int argc, char** argv){ */
 /*     int* array; */
 /*     int num = read_input(argv[1], &array); */

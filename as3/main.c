@@ -4,11 +4,13 @@
 #include <stdlib.h>
 
 #define ASSIGN_TAG 1111
+#define SEND_TAG 1349
+#define ARRAY_SEND_TAG 666
 int cmpfunc(const void*, const void*); 
 void vis(const int*, int); 
 int cal_dim(int); 
 int read_input(const char*, int**); 
-
+int get_rank(const int*, int, int); 
 
 int main(int argc, char** argv){
     /* Input parameters check */
@@ -24,7 +26,9 @@ int main(int argc, char** argv){
 
     /* MPI initialization */
     int rank, size, dim; 
-    MPI_Comm CUBE_COMM; 
+    MPI_Comm CUBE_COMM;
+    MPI_Request request; 
+    MPI_Status status;  
  
     MPI_Init(&argc, &argv); 
     MPI_Comm_size(MPI_COMM_WORLD, &size); 
@@ -35,6 +39,7 @@ int main(int argc, char** argv){
     int* period = malloc(dim*sizeof(int)); 
     int* my_coord = malloc(dim*sizeof(int)); 
     int* target_coord = malloc(dim*sizeof(int)); 
+    int target_rank; 
 
     for(int i=0; i<dim; i++){
 	range[i] = 2; 
@@ -44,15 +49,14 @@ int main(int argc, char** argv){
     MPI_Cart_create(MPI_COMM_WORLD, dim, range, period, 1, &CUBE_COMM);  
     MPI_Comm_rank(CUBE_COMM, &rank); 
     MPI_Cart_coords(CUBE_COMM, rank, dim, my_coord); 
-    printf("From rank %d: my coord is %d, %d, %d, %d. \n", rank, 
-	    my_coord[0], my_coord[1], my_coord[2], my_coord[3]); 
+    /* printf("From rank %d: my coord is %d, %d, %d, %d. \n", rank, */ 
+	    /* my_coord[0], my_coord[1], my_coord[2], my_coord[3]); */ 
 
     /* Local variable declaration */
-    int total_num; 
     int* array_all; 
     int* array_local; 
-    int num_all; 
-    MPI_Status status; 
+    int num_all;
+    int* lengths, *orders;  
 
     if(rank == 0){
 	num_all = read_input(argv[1], &array_all); 
@@ -63,7 +67,7 @@ int main(int argc, char** argv){
     }
     MPI_Bcast(&num_all, 1, MPI_INT, 0, MPI_COMM_WORLD); 
 
-    array_local = (int*)malloc(2*sizeof(int)*num_all/size); 
+    array_local = (int*)malloc(sizeof(int)*num_all/size); 
     if(array_local == NULL){
 	printf("Error: Failed to allocate memory! \n"); 
     }
@@ -78,22 +82,185 @@ int main(int argc, char** argv){
 	MPI_Recv(array_local, num_all/size, MPI_INT, 0, ASSIGN_TAG+rank, MPI_COMM_WORLD, &status); 
     }
 
-qsort(array_local, num_all/size, sizeof(int), cmpfunc); 
+    qsort(array_local, num_all/size, sizeof(int), cmpfunc); 
 
+    for(int i=0; i<size; i++){
+	if(rank == i){
+	    printf("From rank %d: ", rank); 
+	    vis(array_local, num_all/size); 
+	    printf("\n"); 
+	}
+	MPI_Barrier(MPI_COMM_WORLD); 
+
+    }
+    int pivot, length = num_all/size, sum; 
+    MPI_Comm SUB_COMM = CUBE_COMM; 
+    int sub_rank = rank, sub_size = size; 
+    int* medians, *buffer; 
+    int smaller, largeq, buffer_size; 
+    for(int i=0; i<dim; i++){
+	memcpy(target_coord, my_coord, dim*sizeof(int)); 
+	/* pivot choosing */
+	switch(strategy){
+	    case 1: 
+		if(sub_rank == 0){
+		    if(length > 0){
+			pivot = array_local[length/2]; 
+		    }
+		    else{
+			pivot = -1; 
+		    }
+		}
+		MPI_Bcast(&pivot, 1, MPI_INT, 0, SUB_COMM); 
+		break; 
+	    case 2:
+		/* pivot = ???; */
+		if(sub_rank == 0){
+		    medians = malloc(sizeof(int)*sub_size); 
+		}
+		MPI_Barrier(SUB_COMM); 
+		MPI_Gather(&(array_local[length/2]), 1, MPI_INT, medians, 1, MPI_INT, 0, SUB_COMM); 
+		if(sub_rank == 0){
+		    /* vis(medians, sub_size); */ 
+		    qsort(medians, sub_size, sizeof(int), cmpfunc);
+		    /* vis(medians, sub_size); */  
+		    pivot = medians[sub_size/2];
+		    free(medians);  
+		}
+		MPI_Bcast(&pivot, 1, MPI_INT, 0, SUB_COMM); 
+		break; 
+	    case 3: 
+		pivot = array_local[length/2]; 
+		MPI_Allreduce(&pivot, &sum, 1, MPI_INT, MPI_SUM, SUB_COMM); 
+		pivot = sum/sub_size; 
+	}
     /* for(int i=0; i<size; i++){ */
 	/* if(rank == i){ */
-	    /* printf("From rank %d: ", rank); */ 
-	    /* vis(array_local, num_all/size); */ 
+	    /* printf("From rank %d: my pivot is %d. ", rank, pivot); */ 
 	    /* printf("\n"); */ 
 	/* } */
 	/* MPI_Barrier(MPI_COMM_WORLD); */ 
 
     /* } */
-    int pivot; 
+	smaller = 0;
+	for(int i=0; i<length; i++){
+	    if(array_local[i] < pivot){
+		smaller++; 
+	    }
+	    else{
+		break; 
+	    }
+	}
+	largeq = length - smaller; 
+    /* for(int i=0; i<size; i++){ */
+	/* if(rank == i){ */
+	    /* printf("From rank %d: my smaller is %d, larger equal is %d. ", rank, smaller, largeq); */ 
+	    /* printf("\n"); */ 
+	/* } */
+	/* MPI_Barrier(MPI_COMM_WORLD); */ 
+    /* } */
+	memcpy(target_coord, my_coord, dim*sizeof(int)); 
+	target_coord[i] = (target_coord[i]+1)%2; 
+	MPI_Cart_rank(CUBE_COMM, target_coord, &target_rank); 
+    /* for(int i=0; i<size; i++){ */
+	/* if(rank == i){ */
+	    /* printf("From rank %d: my target rank is %d. \n ", rank, target_rank); */ 
+	/* } */
+	/* MPI_Barrier(MPI_COMM_WORLD); */ 
+    /* } */
+	if(my_coord[i]%2 == 0){
+	    MPI_Isend(&largeq, 1, MPI_INT, target_rank, SEND_TAG+rank, CUBE_COMM, &request); 
+	    MPI_Recv(&buffer_size, 1, MPI_INT, target_rank, SEND_TAG+target_rank, CUBE_COMM, &status); 
+	    MPI_Wait(&request, &status);
+	    buffer_size += smaller;  
+	}
+	else{
+	    MPI_Isend(&smaller, 1, MPI_INT, target_rank, SEND_TAG+rank, CUBE_COMM, &request); 
+	    MPI_Recv(&buffer_size, 1, MPI_INT, target_rank, SEND_TAG+target_rank, CUBE_COMM, &status); 
+	    MPI_Wait(&request, &status); 
+	    buffer_size += largeq; 
+	}
+    /* for(int i=0; i<size; i++){ */
+	/* if(rank == i){ */
+	    /* printf("From rank %d: my buffer size is %d. ", rank, buffer_size); */ 
+	    /* printf("\n"); */ 
+	/* } */
+	/* MPI_Barrier(MPI_COMM_WORLD); */ 
+
+    /* } */
+
+	buffer = malloc(sizeof(int)*buffer_size); 
+	if(my_coord[i]%2 == 0){
+	    memcpy(buffer, array_local, smaller*sizeof(int)); 
+	    MPI_Isend(&(array_local[smaller]), largeq, MPI_INT, target_rank, ARRAY_SEND_TAG+rank, CUBE_COMM, &request); 
+	    MPI_Recv(&(buffer[smaller]), buffer_size - smaller, MPI_INT, 
+		    target_rank, ARRAY_SEND_TAG+target_rank, CUBE_COMM, &status); 
+	    MPI_Wait(&request, &status); 
+	}
+	else{
+	    memcpy(buffer, &(array_local[smaller]), largeq*sizeof(int)); 
+	    MPI_Isend(array_local, smaller, MPI_INT, target_rank, ARRAY_SEND_TAG+rank, CUBE_COMM, &request); 
+	    MPI_Recv(&(buffer[largeq]), buffer_size - largeq, MPI_INT, 
+		    target_rank, ARRAY_SEND_TAG+target_rank, CUBE_COMM, &status); 
+	    MPI_Wait(&request, &status); 
+	}
+	free(array_local); 
+	array_local = buffer; 
+	length = buffer_size; 
+	qsort(array_local, length, sizeof(int), cmpfunc); 
+    /* for(int i=0; i<size; i++){ */
+	/* if(rank == i){ */
+	    /* printf("From rank %d: ", rank); */ 
+	    /* vis(array_local, length); */ 
+	    /* printf("\n"); */ 
+	/* } */
+	/* MPI_Barrier(MPI_COMM_WORLD); */ 
+
+    /* } */
+	/* do somgthing */
+	MPI_Comm_split(SUB_COMM, my_coord[i], 0, &SUB_COMM); 
+	MPI_Comm_rank(SUB_COMM, &sub_rank); 
+	MPI_Comm_size(SUB_COMM, &sub_size); 
+    }
+    int order = 0; 
+    for(int i=0; i<dim; i++){
+	order += my_coord[i] << (dim-i-1); 
+    }
+    /* printf("From rank %d: my order is %d. \n", rank, order); */ 
+    if(rank == 0){
+	lengths = malloc(sizeof(int)*size); 
+	orders = malloc(sizeof(int)*size); 
+    }
+    MPI_Gather(&length, 1, MPI_INT, lengths, 1, MPI_INT, 0, CUBE_COMM);
+    MPI_Gather(&order, 1, MPI_INT, orders, 1, MPI_INT, 0, CUBE_COMM);
+    MPI_Isend(array_local, length, MPI_INT, 0, ARRAY_SEND_TAG+rank, CUBE_COMM, &request); 
+    if(rank == 0){
+	int position = 0; 
+	for(int i=0; i<size; i++){
+	    target_rank = get_rank(orders, size, i); 
+	    MPI_Recv(&(array_all[position]), lengths[target_rank], MPI_INT, 
+		    target_rank, ARRAY_SEND_TAG+target_rank, CUBE_COMM, &status);
+	    position += lengths[target_rank];  
+	}
+    }
+    MPI_Wait(&request, &status); 
+    if(rank == 0){
+	vis(array_all, num_all); 
+    }
+    /* for(int i=0; i<size; i++){ */
+	/* if(rank == i){ */
+	    /* printf("From rank %d: order - %d\n", rank, order); */ 
+	    /* vis(array_local, length); */ 
+	    /* printf("\n"); */ 
+	/* } */
+	/* MPI_Barrier(MPI_COMM_WORLD); */ 
+    /* } */
 
 
-
-    MPI_Finalize(); 
     
+    
+ 
+    MPI_Finalize(); 
+  
 }
 

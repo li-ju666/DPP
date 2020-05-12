@@ -1,17 +1,20 @@
 #include <stdio.h>
-
-int add(int a, int b){
-    return a+b; 
-}
+#include <mpi.h>
 
 int main(){
-    int a = 2, b = 2; 
-    int sum = add(a, b); 
-    int array[sum]; 
-    for(int i=0; i<sum; i++){
-	array[i] = 1; 
+    int rank, size, sub_rank; 
+    MPI_Comm SUB_COMM; 
+
+    MPI_Init(NULL, NULL); 
+    MPI_Comm_size(MPI_COMM_WORLD, &size); 
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank); 
+    
+    SUB_COMM = MPI_COMM_WORLD; 
+    sub_rank = rank; 
+    for(int i=0; i<2; i++){
+	MPI_Comm_split(SUB_COMM, sub_rank%2, 0, &SUB_COMM); 
+	MPI_Comm_rank(SUB_COMM, &sub_rank); 
+	printf("Loop %d --- From rank %d: my subrank is %d. \n", i, rank, sub_rank); 
     }
-    for(int i=0; i<sum; i++){
-	printf("%d ", array[i]); 
-    }
+    MPI_Finalize(); 
 }
