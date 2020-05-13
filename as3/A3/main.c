@@ -57,7 +57,7 @@ int main(int argc, char** argv){
     /* Local variable declaration */
     int* array_all; 
     int* array_local; 
-    int num_all;
+    int num_all, length;
     int* lengths, *orders;  
 
     if(rank == 0){
@@ -65,37 +65,53 @@ int main(int argc, char** argv){
 	if(num_all < 1){
 	    printf("Error: Invalid input file! \n"); 
 	}
-	vis(array_all, num_all); 
+	/* vis(array_all, num_all); */ 
     }
     MPI_Bcast(&num_all, 1, MPI_INT, 0, MPI_COMM_WORLD); 
 
-    array_local = (int*)malloc(sizeof(int)*num_all/size); 
+    if(rank == size-1){
+	length = num_all - num_all/size*(size-1); 
+    }
+    else{
+	length = num_all/size; 
+    }
+    array_local = (int*)malloc(sizeof(int)*length); 
     if(array_local == NULL){
 	printf("Error: Failed to allocate memory! \n"); 
     }
 
     if(rank == 0){
-	memcpy(array_local, array_all, num_all/size*sizeof(int)); 
+	memcpy(array_local, array_all, length*sizeof(int)); 
 	for(int i=1; i<size; i++){
-	MPI_Send(&(array_all[i*num_all/size]), num_all/size, MPI_INT, i, ASSIGN_TAG+i, MPI_COMM_WORLD); 
+	    length = num_all/size; 
+	    if(i == size-1){
+		length = num_all - num_all/size*(size-1); 
+	    }
+	    /* printf("%d round: send length %d, index %d. ", i, length, num_all/size*i); */ 
+	    MPI_Send(&(array_all[num_all/size*i]), length, MPI_INT, i, ASSIGN_TAG+i, MPI_COMM_WORLD); 
 	}
+	length = num_all/size; 
     }
     else{
-	MPI_Recv(array_local, num_all/size, MPI_INT, 0, ASSIGN_TAG+rank, MPI_COMM_WORLD, &status); 
-    }
+	/* printf("Going to receive from rank %d ---- length %d. \n", rank, length); */ 
+	MPI_Recv(array_local, length, MPI_INT, 0, ASSIGN_TAG+rank, MPI_COMM_WORLD, &status); 
+	/* printf("Received from rank %d. \n", rank); */ 
 
-    qsort(array_local, num_all/size, sizeof(int), cmpfunc); 
+    }
 
     /* for(int i=0; i<size; i++){ */
 	/* if(rank == i){ */
 	    /* printf("From rank %d: ", rank); */ 
-	    /* vis(array_local, num_all/size); */ 
+	    /* vis(array_local, length); */ 
 	    /* printf("\n"); */ 
 	/* } */
 	/* MPI_Barrier(MPI_COMM_WORLD); */ 
-
     /* } */
-    int pivot, length = num_all/size, sum; 
+    qsort(array_local, length, sizeof(int), cmpfunc); 
+
+
+
+    int pivot, sum; 
     MPI_Comm SUB_COMM = CUBE_COMM; 
     int sub_rank = rank, sub_size = size; 
     int* medians, *buffer; 
@@ -247,7 +263,8 @@ int main(int argc, char** argv){
     }
     MPI_Wait(&request, &status); 
     if(rank == 0){
-	vis(array_all, num_all);
+	/* vis(array_all, num_all); */
+	printf("Running time to be measured! \n"); 
 	write_output(argv[2], array_all, num_all); 	
     }
     /* for(int i=0; i<size; i++){ */
