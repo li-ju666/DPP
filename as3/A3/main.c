@@ -34,9 +34,11 @@ int main(int argc, char** argv){
  
     MPI_Init(&argc, &argv); 
     MPI_Comm_size(MPI_COMM_WORLD, &size); 
-    /* MPI_Comm_rank(MPI_COMM_WORLD, &rank); */ 
+    
+    /* Dimension of the hypercubic communicator */
     dim = cal_dim(size);
-
+    
+    /* Variables for cubic communication */
     int* range = malloc(dim*sizeof(int)); 
     int* period = malloc(dim*sizeof(int)); 
     int* my_coord = malloc(dim*sizeof(int)); 
@@ -48,18 +50,20 @@ int main(int argc, char** argv){
 	period[i] = 1; 
     } 
     
+    /* Create cubic communicator */ 
     MPI_Cart_create(MPI_COMM_WORLD, dim, range, period, 1, &CUBE_COMM);  
     MPI_Comm_rank(CUBE_COMM, &rank); 
     MPI_Cart_coords(CUBE_COMM, rank, dim, my_coord); 
     /* printf("From rank %d: my coord is %d, %d, %d, %d. \n", rank, */ 
 	    /* my_coord[0], my_coord[1], my_coord[2], my_coord[3]); */ 
 
-    /* Local variable declaration */
+    /* Local variables declaration */
     int* array_all; 
     int* array_local; 
     int num_all, length;
     int* lengths, *orders;  
 
+    /* Read the number of elements in the array and broadcast it to other processes */
     if(rank == 0){
 	num_all = read_input(argv[1], &array_all); 
 	if(num_all < 1){
@@ -68,18 +72,22 @@ int main(int argc, char** argv){
 	/* vis(array_all, num_all); */ 
     }
     MPI_Bcast(&num_all, 1, MPI_INT, 0, MPI_COMM_WORLD); 
-
+    
+    /* Calculate the length of local array: if the number of array cannot be divided by the number */
+    /*     of cores, the last process takes all the remaining one while others take num_all/size numbers */
     if(rank == size-1){
 	length = num_all - num_all/size*(size-1); 
     }
     else{
 	length = num_all/size; 
     }
+
     array_local = (int*)malloc(sizeof(int)*length); 
     if(array_local == NULL){
 	printf("Error: Failed to allocate memory! \n"); 
     }
 
+    /* Assign task to all processes by process with rank 0 */
     if(rank == 0){
 	memcpy(array_local, array_all, length*sizeof(int)); 
 	for(int i=1; i<size; i++){
@@ -87,16 +95,12 @@ int main(int argc, char** argv){
 	    if(i == size-1){
 		length = num_all - num_all/size*(size-1); 
 	    }
-	    /* printf("%d round: send length %d, index %d. ", i, length, num_all/size*i); */ 
 	    MPI_Send(&(array_all[num_all/size*i]), length, MPI_INT, i, ASSIGN_TAG+i, MPI_COMM_WORLD); 
 	}
 	length = num_all/size; 
     }
     else{
-	/* printf("Going to receive from rank %d ---- length %d. \n", rank, length); */ 
 	MPI_Recv(array_local, length, MPI_INT, 0, ASSIGN_TAG+rank, MPI_COMM_WORLD, &status); 
-	/* printf("Received from rank %d. \n", rank); */ 
-
     }
 
     /* for(int i=0; i<size; i++){ */
@@ -107,18 +111,19 @@ int main(int argc, char** argv){
 	/* } */
 	/* MPI_Barrier(MPI_COMM_WORLD); */ 
     /* } */
+
+    /* Sort local array */
     qsort(array_local, length, sizeof(int), cmpfunc); 
 
-
-
+    /* Declare local variables for sub_communicators */
     int pivot, sum; 
     MPI_Comm SUB_COMM = CUBE_COMM; 
     int sub_rank = rank, sub_size = size; 
     int* medians, *buffer; 
-    int smaller, largeq, buffer_size; 
+    int smaller, largeq, buffer_size;
+
     for(int i=0; i<dim; i++){
-	memcpy(target_coord, my_coord, dim*sizeof(int)); 
-	/* pivot choosing */
+	/* Choose pivot and broadcast it to other processors in the same sub_group */
 	switch(strategy){
 	    case 1: 
 		if(sub_rank == 0){
@@ -131,35 +136,28 @@ int main(int argc, char** argv){
 		}
 		MPI_Bcast(&pivot, 1, MPI_INT, 0, SUB_COMM); 
 		break; 
+	    
 	    case 2:
-		/* pivot = ???; */
 		if(sub_rank == 0){
 		    medians = malloc(sizeof(int)*sub_size); 
 		}
 		MPI_Barrier(SUB_COMM); 
 		MPI_Gather(&(array_local[length/2]), 1, MPI_INT, medians, 1, MPI_INT, 0, SUB_COMM); 
 		if(sub_rank == 0){
-		    /* vis(medians, sub_size); */ 
 		    qsort(medians, sub_size, sizeof(int), cmpfunc);
-		    /* vis(medians, sub_size); */  
 		    pivot = medians[sub_size/2];
 		    free(medians);  
 		}
 		MPI_Bcast(&pivot, 1, MPI_INT, 0, SUB_COMM); 
 		break; 
+	    
 	    case 3: 
 		pivot = array_local[length/2]; 
 		MPI_Allreduce(&pivot, &sum, 1, MPI_INT, MPI_SUM, SUB_COMM); 
 		pivot = sum/sub_size; 
 	}
-    /* for(int i=0; i<size; i++){ */
-	/* if(rank == i){ */
-	    /* printf("From rank %d: my pivot is %d. ", rank, pivot); */ 
-	    /* printf("\n"); */ 
-	/* } */
-	/* MPI_Barrier(MPI_COMM_WORLD); */ 
-
-    /* } */
+	
+	/* Each processor: check how many numbers are smaller/larger equal than pivot */
 	smaller = 0;
 	for(int i=0; i<length; i++){
 	    if(array_local[i] < pivot){
@@ -170,22 +168,14 @@ int main(int argc, char** argv){
 	    }
 	}
 	largeq = length - smaller; 
-    /* for(int i=0; i<size; i++){ */
-	/* if(rank == i){ */
-	    /* printf("From rank %d: my smaller is %d, larger equal is %d. ", rank, smaller, largeq); */ 
-	    /* printf("\n"); */ 
-	/* } */
-	/* MPI_Barrier(MPI_COMM_WORLD); */ 
-    /* } */
+
+	/* Determine one's target processor to communicate with */	
 	memcpy(target_coord, my_coord, dim*sizeof(int)); 
 	target_coord[i] = (target_coord[i]+1)%2; 
 	MPI_Cart_rank(CUBE_COMM, target_coord, &target_rank); 
-    /* for(int i=0; i<size; i++){ */
-	/* if(rank == i){ */
-	    /* printf("From rank %d: my target rank is %d. \n ", rank, target_rank); */ 
-	/* } */
-	/* MPI_Barrier(MPI_COMM_WORLD); */ 
-    /* } */
+	
+	/* Tell target processor how many integers are going to be sent, to make sure target */
+	/*     processor allocate proper memory in advance */
 	if(my_coord[i]%2 == 0){
 	    MPI_Isend(&largeq, 1, MPI_INT, target_rank, SEND_TAG+rank, CUBE_COMM, &request); 
 	    MPI_Recv(&buffer_size, 1, MPI_INT, target_rank, SEND_TAG+target_rank, CUBE_COMM, &status); 
@@ -198,15 +188,8 @@ int main(int argc, char** argv){
 	    MPI_Wait(&request, &status); 
 	    buffer_size += largeq; 
 	}
-    /* for(int i=0; i<size; i++){ */
-	/* if(rank == i){ */
-	    /* printf("From rank %d: my buffer size is %d. ", rank, buffer_size); */ 
-	    /* printf("\n"); */ 
-	/* } */
-	/* MPI_Barrier(MPI_COMM_WORLD); */ 
-
-    /* } */
-
+	
+	/* Allocate memory, send and receive data to/from target processor */
 	buffer = malloc(sizeof(int)*buffer_size); 
 	if(my_coord[i]%2 == 0){
 	    memcpy(buffer, array_local, smaller*sizeof(int)); 
@@ -225,26 +208,24 @@ int main(int argc, char** argv){
 	free(array_local); 
 	array_local = buffer; 
 	length = buffer_size; 
+	
+	/* Sort newly-received data */
 	qsort(array_local, length, sizeof(int), cmpfunc); 
-    /* for(int i=0; i<size; i++){ */
-	/* if(rank == i){ */
-	    /* printf("From rank %d: ", rank); */ 
-	    /* vis(array_local, length); */ 
-	    /* printf("\n"); */ 
-	/* } */
-	/* MPI_Barrier(MPI_COMM_WORLD); */ 
-
-    /* } */
-	/* do somgthing */
+	
+	/* Split sub_communicator */
 	MPI_Comm_split(SUB_COMM, my_coord[i], 0, &SUB_COMM); 
 	MPI_Comm_rank(SUB_COMM, &sub_rank); 
 	MPI_Comm_size(SUB_COMM, &sub_size); 
     }
+
+    /* Each processor: determine the order of local data in the whole array */
     int order = 0; 
     for(int i=0; i<dim; i++){
 	order += my_coord[i] << (dim-i-1); 
     }
-    /* printf("From rank %d: my order is %d. \n", rank, order); */ 
+    
+    /* Processor with rank 0 is going to collect data in right order, which requires the length of array in each processor */
+	/* and the order they are in: this step is to collect these information */
     if(rank == 0){
 	lengths = malloc(sizeof(int)*size); 
 	orders = malloc(sizeof(int)*size); 
@@ -252,6 +233,8 @@ int main(int argc, char** argv){
     MPI_Gather(&length, 1, MPI_INT, lengths, 1, MPI_INT, 0, CUBE_COMM);
     MPI_Gather(&order, 1, MPI_INT, orders, 1, MPI_INT, 0, CUBE_COMM);
     MPI_Isend(array_local, length, MPI_INT, 0, ARRAY_SEND_TAG+rank, CUBE_COMM, &request); 
+    
+    /* Collect all arrays in right order */
     if(rank == 0){
 	int position = 0; 
 	for(int i=0; i<size; i++){
@@ -262,19 +245,22 @@ int main(int argc, char** argv){
 	}
     }
     MPI_Wait(&request, &status); 
+    
+    /* Output the result and free resources */
     if(rank == 0){
 	/* vis(array_all, num_all); */
 	printf("Running time to be measured! \n"); 
-	write_output(argv[2], array_all, num_all); 	
+	write_output(argv[2], array_all, num_all); 
+	free(array_all); 
+	free(lengths); 
+	free(orders); 
     }
-    /* for(int i=0; i<size; i++){ */
-	/* if(rank == i){ */
-	    /* printf("From rank %d: order - %d\n", rank, order); */ 
-	    /* vis(array_local, length); */ 
-	    /* printf("\n"); */ 
-	/* } */
-	/* MPI_Barrier(MPI_COMM_WORLD); */ 
-    /* } */
+    free(range); 
+    free(period); 
+    free(my_coord); 
+    free(target_coord); 
+    free(array_local); 
+
     MPI_Finalize(); 
   
 }
