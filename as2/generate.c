@@ -9,7 +9,6 @@ int main(int argc, char** argv){
     for(int i=0; i<dim*dim*2; i++){
 	/* srand(i); */ 
 	matrix[i] = rand()%20;
-	printf("%d \n", matrix[i]); 
     }
     char output[] = "data"; 
     write_output(output, matrix, dim); 
