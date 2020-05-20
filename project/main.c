@@ -7,6 +7,7 @@
 
 #define FINAL_TIME 100
 #define SEND_TAG 1349 
+#define SAVE 1
 
 void prop(int*, double*);  
 int find_r(double*, double); 
@@ -60,7 +61,9 @@ int main(int argc, char** argv){
     P[13*7+0] = 1; 
     P[13*7+6] = -1; 
     P[14*7+6] = -1; 
-
+    
+    double start = MPI_Wtime(); 
+    /* printf("From rank %d: %d simulations are going to be done! \n", rank, sim_num); */ 
     for(int i=0; i<sim_num; i++){
 	/* printf("Now i is: %d. \n", i); */ 
 	memcpy(x, x0, sizeof(int)*7); 
@@ -102,6 +105,8 @@ int main(int argc, char** argv){
 	cases[i] = result[i*7]; 
     }
     
+    double cal = MPI_Wtime();    
+    
     int* cases_all; 
     if(rank == 0){
 	cases_all = malloc(sizeof(int)*sim_num*size); 
@@ -111,16 +116,26 @@ int main(int argc, char** argv){
 	    MPI_Recv(&(cases_all[i*sim_num]), sim_num, MPI_INT, i, SEND_TAG+i, MPI_COMM_WORLD, &status); 
 	}
 	
-	if(write_output(argv[2], cases, sim_num)<0){
-	    printf("Failed to write result! \n"); 
-	}
-	/* vis(cases_all, 1, sim_num*size); */ 
-	free(cases_all); 
+	/* if(write_output(argv[2], cases, sim_num)<0){ */
+	/*     printf("Failed to write result! \n"); */ 
+	/* } */
+	/* free(cases_all); */ 
     
     }
     else{
 	/* printf("???"); */ 
 	MPI_Send(cases, sim_num, MPI_INT, 0, SEND_TAG+rank, MPI_COMM_WORLD); 
+    }
+
+    double commu = MPI_Wtime(); 
+    printf("From rank %d: calculation time is %f, communication time is %f. \n", rank, cal-start, commu-cal); 
+    if(rank == 0){
+#if SAVE
+	if(write_output(argv[2], cases_all, sim_num*size)<0){
+	    printf("Failed to write result! \n"); 
+	}
+#endif
+	free(cases_all); 
     }
 
     free(P); 
