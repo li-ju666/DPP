@@ -94,6 +94,8 @@ int main(int argc, char** argv){
 	    }
 	    t = t + tau; 
 	    count++; 
+	    /* if(count < 100){ */
+	    /* printf("%d, %d \n", count, x[0]); } */
 	}
 	/* vis(x, 1, 7); */ 
 	memcpy(&(result[i*7]), x, 7*sizeof(int)); 

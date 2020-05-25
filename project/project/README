@@ -1,0 +1,17 @@
+The program is named by simulation and two input parameters are required: 
+
+the 1st one is the number of simulations run on EACH processor; 
+the 2nd one is the name of output file. 
+
+The output data contains a series of integers and is saved in a ascii-coded file
+seperated by ",". Output data are numbers of susceptible people of all simulations. 
+
+--------------------------------------------------------------------------------
+Example: mpirun -np 5 ./simulation 1000 result
+
+The instruction stands that the program is run on 5 different processors
+parallel and for each processor, 1000 simulations will be done. Therefore, in
+total 5*1000 simulations will be done and will be save in the file named result.
+
+--------------------------------------------------------------------------------
+By Li Ju

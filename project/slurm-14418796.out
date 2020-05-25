@@ -1,0 +1,5 @@
+/var/spool/slurmd/job14418796/slurm_script: line 8: r: command not found
+From rank 1: calculation time is 35.904253, communication time is 0.000307. 
+From rank 0: calculation time is 35.117001, communication time is 0.787837. 
+From rank 3: calculation time is 35.091565, communication time is 0.813339. 
+From rank 2: calculation time is 35.157266, communication time is 0.747566. 
