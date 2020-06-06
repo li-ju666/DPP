@@ -1,15 +1,21 @@
 #include "mat.h"
-
+#include <mpi.h>
+#include <stdio.h>
 /* Function for matrix multiplication */
 float* multiply(float* A, float* B, int dim){
     float* result = calloc(dim*dim, sizeof(float)); 
-    for(int i=0; i<dim; i++){
-	for(int j=0; j<dim; j++){
+    float* row = calloc(dim, sizeof(float)); 
+    for(int j=0; j<dim; j++){
+	for(int index=0; index<dim; index++){
+	    row[index] = B[index*dim+j]; 
+	}
+	for(int i=0; i<dim; i++){
 	    for(int index=0; index<dim; index++){
-		result[i*dim+j] += A[i*dim+index]*B[index*dim+j]; 
+		result[i*dim+j] += A[i*dim+index]*row[index]; 
 	    }
 	}
     }
+    free(row); 
     return result; 
 }
 

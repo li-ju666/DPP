@@ -29,7 +29,7 @@ int main(int argc, char** argv){
     /* MPI initialization */
     int rank, size, dim; 
     MPI_Comm CUBE_COMM;
-    MPI_Request request; 
+    MPI_Request srequest, rrequest; 
     MPI_Status status;  
  
     MPI_Init(&argc, &argv); 
@@ -71,7 +71,7 @@ int main(int argc, char** argv){
 	}
 	/* vis(array_all, num_all); */ 
     }
-    MPI_Bcast(&num_all, 1, MPI_INT, 0, MPI_COMM_WORLD); 
+    MPI_Bcast(&num_all, 1, MPI_INT, 0, CUBE_COMM); 
     
     /* Calculate the length of local array: if the number of array cannot be divided by the number */
     /*     of cores, the last process takes all the remaining one while others take num_all/size numbers */
@@ -95,22 +95,16 @@ int main(int argc, char** argv){
 	    if(i == size-1){
 		length = num_all - num_all/size*(size-1); 
 	    }
-	    MPI_Send(&(array_all[num_all/size*i]), length, MPI_INT, i, ASSIGN_TAG+i, MPI_COMM_WORLD); 
+	    MPI_Send(&(array_all[num_all/size*i]), length, MPI_INT, i, ASSIGN_TAG+i, CUBE_COMM); 
 	}
 	length = num_all/size; 
     }
     else{
-	MPI_Recv(array_local, length, MPI_INT, 0, ASSIGN_TAG+rank, MPI_COMM_WORLD, &status); 
+	MPI_Recv(array_local, length, MPI_INT, 0, ASSIGN_TAG+rank, CUBE_COMM, &status); 
     }
 
-    /* for(int i=0; i<size; i++){ */
-	/* if(rank == i){ */
-	    /* printf("From rank %d: ", rank); */ 
-	    /* vis(array_local, length); */ 
-	    /* printf("\n"); */ 
-	/* } */
-	/* MPI_Barrier(MPI_COMM_WORLD); */ 
-    /* } */
+    double start, execution_time; 
+    start = MPI_Wtime(); 
 
     /* Sort local array */
     qsort(array_local, length, sizeof(int), cmpfunc); 
@@ -126,14 +120,7 @@ int main(int argc, char** argv){
 	/* Choose pivot and broadcast it to other processors in the same sub_group */
 	switch(strategy){
 	    case 1: 
-		if(sub_rank == 0){
-		    if(length > 0){
-			pivot = array_local[length/2]; 
-		    }
-		    else{
-			pivot = -1; 
-		    }
-		}
+		pivot = array_local[length/2]; 
 		MPI_Bcast(&pivot, 1, MPI_INT, 0, SUB_COMM); 
 		break; 
 	    
@@ -177,15 +164,17 @@ int main(int argc, char** argv){
 	/* Tell target processor how many integers are going to be sent, to make sure target */
 	/*     processor allocate proper memory in advance */
 	if(my_coord[i]%2 == 0){
-	    MPI_Isend(&largeq, 1, MPI_INT, target_rank, SEND_TAG+rank, CUBE_COMM, &request); 
-	    MPI_Recv(&buffer_size, 1, MPI_INT, target_rank, SEND_TAG+target_rank, CUBE_COMM, &status); 
-	    MPI_Wait(&request, &status);
+	    MPI_Isend(&largeq, 1, MPI_INT, target_rank, SEND_TAG+rank, CUBE_COMM, &srequest); 
+	    MPI_Irecv(&buffer_size, 1, MPI_INT, target_rank, SEND_TAG+target_rank, CUBE_COMM, &rrequest); 
+	    MPI_Wait(&srequest, &status);
+	    MPI_Wait(&rrequest, &status);
 	    buffer_size += smaller;  
 	}
 	else{
-	    MPI_Isend(&smaller, 1, MPI_INT, target_rank, SEND_TAG+rank, CUBE_COMM, &request); 
-	    MPI_Recv(&buffer_size, 1, MPI_INT, target_rank, SEND_TAG+target_rank, CUBE_COMM, &status); 
-	    MPI_Wait(&request, &status); 
+	    MPI_Isend(&smaller, 1, MPI_INT, target_rank, SEND_TAG+rank, CUBE_COMM, &srequest); 
+	    MPI_Irecv(&buffer_size, 1, MPI_INT, target_rank, SEND_TAG+target_rank, CUBE_COMM, &rrequest); 
+	    MPI_Wait(&srequest, &status); 
+	    MPI_Wait(&rrequest, &status); 
 	    buffer_size += largeq; 
 	}
 	
@@ -193,17 +182,19 @@ int main(int argc, char** argv){
 	buffer = malloc(sizeof(int)*buffer_size); 
 	if(my_coord[i]%2 == 0){
 	    memcpy(buffer, array_local, smaller*sizeof(int)); 
-	    MPI_Isend(&(array_local[smaller]), largeq, MPI_INT, target_rank, ARRAY_SEND_TAG+rank, CUBE_COMM, &request); 
-	    MPI_Recv(&(buffer[smaller]), buffer_size - smaller, MPI_INT, 
-		    target_rank, ARRAY_SEND_TAG+target_rank, CUBE_COMM, &status); 
-	    MPI_Wait(&request, &status); 
+	    MPI_Isend(&(array_local[smaller]), largeq, MPI_INT, target_rank, ARRAY_SEND_TAG+rank, CUBE_COMM, &srequest); 
+	    MPI_Irecv(&(buffer[smaller]), buffer_size - smaller, MPI_INT, 
+		    target_rank, ARRAY_SEND_TAG+target_rank, CUBE_COMM, &rrequest); 
+	    MPI_Wait(&srequest, &status); 
+	    MPI_Wait(&rrequest, &status); 
 	}
 	else{
 	    memcpy(buffer, &(array_local[smaller]), largeq*sizeof(int)); 
-	    MPI_Isend(array_local, smaller, MPI_INT, target_rank, ARRAY_SEND_TAG+rank, CUBE_COMM, &request); 
-	    MPI_Recv(&(buffer[largeq]), buffer_size - largeq, MPI_INT, 
-		    target_rank, ARRAY_SEND_TAG+target_rank, CUBE_COMM, &status); 
-	    MPI_Wait(&request, &status); 
+	    MPI_Isend(array_local, smaller, MPI_INT, target_rank, ARRAY_SEND_TAG+rank, CUBE_COMM, &srequest); 
+	    MPI_Irecv(&(buffer[largeq]), buffer_size - largeq, MPI_INT, 
+		    target_rank, ARRAY_SEND_TAG+target_rank, CUBE_COMM, &rrequest); 
+	    MPI_Wait(&srequest, &status); 
+	    MPI_Wait(&rrequest, &status); 
 	}
 	free(array_local); 
 	array_local = buffer; 
@@ -217,6 +208,12 @@ int main(int argc, char** argv){
 	MPI_Comm_rank(SUB_COMM, &sub_rank); 
 	MPI_Comm_size(SUB_COMM, &sub_size); 
     }
+
+    execution_time = MPI_Wtime()-start; 
+    
+    double max_time; 
+    MPI_Reduce(&execution_time, &max_time, 1, MPI_DOUBLE, MPI_MAX, 0, CUBE_COMM); 
+
 
     /* Each processor: determine the order of local data in the whole array */
     int order = 0; 
@@ -232,24 +229,25 @@ int main(int argc, char** argv){
     }
     MPI_Gather(&length, 1, MPI_INT, lengths, 1, MPI_INT, 0, CUBE_COMM);
     MPI_Gather(&order, 1, MPI_INT, orders, 1, MPI_INT, 0, CUBE_COMM);
-    MPI_Isend(array_local, length, MPI_INT, 0, ARRAY_SEND_TAG+rank, CUBE_COMM, &request); 
+    MPI_Isend(array_local, length, MPI_INT, 0, ARRAY_SEND_TAG+rank, CUBE_COMM, &srequest); 
     
     /* Collect all arrays in right order */
     if(rank == 0){
 	int position = 0; 
 	for(int i=0; i<size; i++){
 	    target_rank = get_rank(orders, size, i); 
-	    MPI_Recv(&(array_all[position]), lengths[target_rank], MPI_INT, 
-		    target_rank, ARRAY_SEND_TAG+target_rank, CUBE_COMM, &status);
+	    MPI_Irecv(&(array_all[position]), lengths[target_rank], MPI_INT, 
+		    target_rank, ARRAY_SEND_TAG+target_rank, CUBE_COMM, &rrequest);
+	    MPI_Wait(&rrequest, &status); 
 	    position += lengths[target_rank];  
 	}
     }
-    MPI_Wait(&request, &status); 
+    MPI_Wait(&srequest, &status); 
     
     /* Output the result and free resources */
     if(rank == 0){
 	/* vis(array_all, num_all); */
-	printf("Running time to be measured! \n"); 
+	printf("%f\n", max_time); 
 	write_output(argv[2], array_all, num_all); 
 	free(array_all); 
 	free(lengths); 

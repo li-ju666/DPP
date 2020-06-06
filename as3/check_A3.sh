@@ -71,14 +71,14 @@ for (( i = 0; i < ${#commands[@]}; i++ )); do
 done
 echo "OK"
 
-# echo "Checking format of output"
-# output=`${commands[0]}`
-# if ! [[ $output =~ ^[[:space:]]*[[:digit:]]*\.[[:digit:]]+[[:space:]]*$ ]]; then
-#      >&2 echo "Wrong format on output: \"$output\" should be one floating point number."
-#      exit 1
-# fi
-# rm ${output_file}
-# echo "OK"
+echo "Checking format of output"
+output=`${commands[0]}`
+if ! [[ $output =~ ^[[:space:]]*[[:digit:]]*\.[[:digit:]]+[[:space:]]*$ ]]; then
+     >&2 echo "Wrong format on output: \"$output\" should be one floating point number."
+     exit 1
+fi
+rm ${output_file}
+echo "OK"
 
 echo "Checking result of parallel runs"
 p=4
