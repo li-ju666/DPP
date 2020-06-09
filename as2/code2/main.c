@@ -32,7 +32,7 @@ int main(int argc, char** argv){
     MPI_Comm_size(MPI_COMM_WORLD, &size); 
     MPI_Comm_rank(MPI_COMM_WORLD, &rank); 
     
-    MPI_Request Arequest[size], Brequest[size],Trequest; 
+    MPI_Request Arequest[size], Brequest[size],Trequest, Trequestb, Trequestm;
     MPI_Status status[size]; 
 
     grid_dim[0] = grid_dim[1] = (int)sqrt((double)size); 
@@ -84,7 +84,7 @@ int main(int argc, char** argv){
     /* MPI_Type_vector(dim, dim,dim*grid_dim[0], MPI_FLOAT, &checkboard_type); */ 
     /* MPI_Type_commit(&checkboard_type); */ 
     
-    /* Another approach - cyclic checkboard split */
+    /* Another approach - cyclic checkboard split. */
     int block_len[dim]; 
     MPI_Aint indices[dim]; 
     MPI_Datatype data_type[dim];
@@ -142,59 +142,97 @@ int main(int argc, char** argv){
     MPI_Comm_split(GRID_COMM, my_coord[0], rank, &ROW_COMM); 
 #if TIMEANALYSIS
 	/* Communication time included */
-	double start, my_execution_time;
+	double start, my_execution_time,m_start,m_cost, b_start, b_cost;
 	double* exe_time;
-	start = MPI_Wtime();
+	double* b_time;
+	double* m_time;
+	//double* ser_time;
 #endif
     /* Calculation for A*B parallel*/
     for(int i=0; i<grid_dim[0]; i++){
+#if TIMEANALYSIS
+		start = MPI_Wtime();
+#endif
 	/* Broadcast target partial matrix A */
+	m_start = MPI_Wtime();
 	if((my_coord[0]+i)%grid_dim[0] == my_coord[1]){
 	    memcpy(A_cal, A_local, sizeof(float)*dim*dim); 
 	}
 	MPI_Bcast(A_cal, dim*dim, MPI_FLOAT, 
 		(my_coord[0]+i)%grid_dim[0], ROW_COMM);
+	m_cost += MPI_Wtime() - m_start;
 	/* Local matrix calculation */
 	/* printf("Process %d: round %d: My A is %.3f, my B is %.3f. \n", rank, i, A_cal[0], B_cal[0]); */ 
+
+	//ser_start = MPI_Wtime();
 	float* temp = multiply(A_cal, B_cal, dim); 
+	//ser_cost += MPI_Wtime()-start;
 	sum(C, temp, dim);
 	free(temp);
-
+	m_start = MPI_Wtime();
 	MPI_Isend(B_cal, dim*dim, MPI_FLOAT, up, B_TAG+rank, GRID_COMM, &Brequest[0]); 
 	MPI_Recv(B_cal, dim*dim, MPI_FLOAT, down, B_TAG+down, GRID_COMM, &status[0]); 
 	MPI_Wait(&Brequest[0], &status[0]);
-	MPI_Barrier(GRID_COMM); 	
-    }
+	m_cost += MPI_Wtime() - m_start;
+	b_start = MPI_Wtime();
+	MPI_Barrier(GRID_COMM);
+	b_cost += MPI_Wtime() - b_start;
 #if TIMEANALYSIS
 	/* Time evaluation part */
-	my_execution_time = MPI_Wtime() - start;
+	my_execution_time += MPI_Wtime() - start;
 #endif
+    }
+
     /* Collect result from all processes to process with rank 0 */ 
     MPI_Isend(C, dim*dim, MPI_FLOAT, 0, B_TAG+rank, GRID_COMM, &Brequest[0]); 
 #if TIMEANALYSIS
 	MPI_Isend(&my_execution_time, 1, MPI_DOUBLE, 0, T_TAG* rank, GRID_COMM, &Trequest);
+	MPI_Isend(&b_cost, 1, MPI_DOUBLE, 0, 7777* rank, GRID_COMM, &Trequestb);
+	MPI_Isend(&m_cost, 1, MPI_DOUBLE, 0, 6666* rank, GRID_COMM, &Trequestm);
+	//MPI_Isend(&ser_cost, 1, MPI_DOUBLE, 0, 777* rank, GRID_COMM, &Trequests);
 #endif
     if(rank == 0){
 #if TIMEANALYSIS
 		exe_time = malloc(size * sizeof(double));
+		b_time = malloc(size * sizeof(double));
+		m_time = malloc(size * sizeof(double));
+		//ser_time = malloc(size * sizeof(double));
 		exe_time[0] = my_execution_time;
+		b_time[0] = b_cost;
+		m_time[0] = m_cost;
+		//ser_time[0] = ser_cost;
 #endif
 	for(int i=0; i<size; i++){
 	    MPI_Recv(&(C_all[(i%grid_dim[0]) + i/grid_dim[0]*dim*grid_dim[0]]), 
 		    dim, checkboard_type, i, B_TAG+i, GRID_COMM, &status[0]); 
 #if TIMEANALYSIS
 		MPI_Recv(&exe_time[i], 1, MPI_DOUBLE, i, T_TAG* i, GRID_COMM, &status[0]);
+		MPI_Recv(&b_time[i], 1, MPI_DOUBLE, i, 7777* i, GRID_COMM, &status[0]);
+		MPI_Recv(&m_time[i], 1, MPI_DOUBLE, i, 6666* i, GRID_COMM, &status[0]);
+		//MPI_Recv(&ser_time[i], 1, MPI_DOUBLE, i, 777* i, GRID_COMM, &status[0]);
 #endif
 	}
 
 #if TIMEANALYSIS
-	double max_time = 0;
+	double max_time = 0, max_serial_time = 0,mm=0,mb=0;
 	for (int i = 0; i < size; i++) {
 		if (exe_time[i] > max_time) {
 			max_time = exe_time[i];
 		}
+		if (b_time[i] > mb) {
+			mb = b_time[i];
+		}
+		if (m_time[i] >mm) {
+			mm = m_time[i];
+		}
+		/*if (ser_time[i] > max_serial_time) {
+			max_serial_time = ser_time[i];
+		}*/
 	}
 	printf("%f\n", max_time);
+	printf("%f\n", mb);
+	printf("%f\n", mm);
+	//printf("%f\n", max_serial_time);
 #endif
 
 #if VIS
@@ -213,7 +251,11 @@ int main(int argc, char** argv){
 #endif
 #if TIMEANALYSIS
 	MPI_Wait(&Trequest, &status[0]);
+	MPI_Wait(&Trequestb, &status[0]);
+	MPI_Wait(&Trequestm, &status[0]);
+	//MPI_Wait(&Trequests, &status[0]);
 	free(exe_time);
+	//free(ser_time);
 #endif
 	free(C_all); 
 	free(A_all); 
@@ -229,3 +271,20 @@ int main(int argc, char** argv){
     MPI_Finalize();
     return 0;  
 }
+
+/*
+const double P[15*7]= {
+	1,0,0,0,0,0,0,
+	-1,0,0,0,0,0,0,
+	-1,0,1,0,0,0,0,
+	0,1,0,0,0,0,0,
+	0,-1,0,0,0,0,0,
+	0,-1,0,1,0,0,0,
+	0,0,-1,0,0,0,0,
+	0,0,0,-1,0,1,0,
+	0,0,0,0,-1,0,0,
+	0,0,0,0,-1,0,1,
+	0,0,0,0,0,-1,0,
+	1,0,0,0,0,-1,0,
+	0,0,0,0,0,0,-1};
+*/

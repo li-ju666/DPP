@@ -8,7 +8,7 @@
 #define T_TAG 111
 
 #define VIS 0
-#define SAVE 0
+#define SAVE 1
 #define TIMEANALYSIS 1
 
 int main(int argc, char** argv){
